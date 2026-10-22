@@ -1,128 +1,197 @@
-import streamlit as st
 import pickle
+from flask import Flask, render_template_string, request
 import numpy as np
-import pandas as pd
 
-# Page Configuration
-st.set_page_config(
-    page_title="Diabetes Risk Prediction Portal",
-    page_icon="🩺",
-    layout="centered",
-    initial_sidebar_state="expanded"
-)
+app = Flask(__name__)
 
-# Custom CSS Styling for an Attractive Layout
-st.markdown("""
+# Load the trained SVM model
+with open("svm.pkl", "rb") as f:
+  model = pickle.load(f)
+
+# HTML template with an attractive Bootstrap 5 layout
+HTML_TEMPLATE = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Health Risk Assessment Portal</title>
+    <!-- Bootstrap 5 CSS CDN -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
-    .main {
-        background-color: #f8f9fa;
-    }
-    .stButton>button {
-        width: 100%;
-        background-color: #007bff;
-        color: white;
-        font-weight: bold;
-        border-radius: 8px;
-        padding: 0.6rem;
-        border: none;
-    }
-    .stButton>button:hover {
-        background-color: #0056b3;
-        color: white;
-    }
-    .card {
-        background-color: white;
-        padding: 20px;
-        border-radius: 10px;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        margin-bottom: 20px;
-    }
+        body {
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            min-height: 100vh;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            padding: 2rem 0;
+        }
+        .card {
+            border: none;
+            border-radius: 1rem;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+        }
+        .btn-primary {
+            background: linear-gradient(45deg, #4e73df, #224abe);
+            border: none;
+            border-radius: 0.5rem;
+            padding: 0.75rem;
+            font-weight: 600;
+        }
+        .btn-primary:hover {
+            background: linear-gradient(45deg, #224abe, #1a38b5);
+        }
+        .form-control, .form-select {
+            border-radius: 0.5rem;
+            padding: 0.65rem 1rem;
+        }
+        .result-box {
+            background-color: #e8f4fd;
+            border-left: 5px solid #3498db;
+            padding: 1.5rem;
+            border-radius: 0.5rem;
+            margin-top: 1.5rem;
+        }
     </style>
-""", unsafe_allow_html=True)
+</head>
+<body>
+    <div class="container">
+        <div class="row justify-content-center">
+            <div class="col-lg-8">
+                <div class="card p-4 p-md-5 bg-white">
+                    <div class="text-center mb-4">
+                        <h2 class="fw-bold text-primary">Health Risk Predictor</h2>
+                        <p class="text-muted">Enter your health metrics below to generate an instant prediction.</p>
+                    </div>
 
-# Load the trained SVM model safely
-@st.cache_resource
-def load_model():
-    with open('svm.pkl', 'rb') as file:
-        model = pickle.load(file)
-    return model
+                    <form method="POST">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold">Age</label>
+                                <input type="number" class="form-control" name="age" placeholder="e.g. 45" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold">Gender (Encoded Code)</label>
+                                <input type="number" class="form-control" name="gender" placeholder="e.g. 0 or 1" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold">City Code</label>
+                                <input type="number" class="form-control" name="city" placeholder="City numeric code" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold">BMI</label>
+                                <input type="number" step="0.1" class="form-control" name="bmi" placeholder="e.g. 24.5" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold">Family History of Diabetes</label>
+                                <input type="number" class="form-control" name="family_history_diabetes" placeholder="0 (No) / 1 (Yes)" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold">Physical Activity Level</label>
+                                <input type="number" class="form-control" name="physical_activity_level" placeholder="Level code" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold">Diet Type</label>
+                                <input type="number" class="form-control" name="diet_type" placeholder="Diet code" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold">Smoking Status</label>
+                                <input type="number" class="form-control" name="smoking_status" placeholder="Status code" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold">Alcohol Consumption</label>
+                                <input type="number" class="form-control" name="alcohol_consumption" placeholder="Consumption code" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold">Hours Sleep Per Night</label>
+                                <input type="number" step="0.1" class="form-control" name="hours_sleep_per_night" placeholder="e.g. 7.5" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold">Stress Level</label>
+                                <input type="number" class="form-control" name="stress_level" placeholder="Scale 1-10" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold">Fasting Blood Sugar</label>
+                                <input type="number" step="0.1" class="form-control" name="fasting_blood_sugar" placeholder="e.g. 95.0" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold">HbA1c Level</label>
+                                <input type="number" step="0.1" class="form-control" name="hba1c_level" placeholder="e.g. 5.6" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold">Blood Pressure (Systolic)</label>
+                                <input type="number" class="form-control" name="blood_pressure_systolic" placeholder="e.g. 120" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold">Blood Pressure (Diastolic)</label>
+                                <input type="number" class="form-control" name="blood_pressure_diastolic" placeholder="e.g. 80" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold">Waist Circumference (cm)</label>
+                                <input type="number" step="0.1" class="form-control" name="waist_circumference_cm" placeholder="e.g. 85.0" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold">Income Bracket</label>
+                                <input type="number" class="form-control" name="income_bracket" placeholder="Bracket code" required>
+                            </div>
+                        </div>
 
-try:
-    model = load_model()
-except Exception as e:
-    st.error(f"Error loading model: {e}")
+                        <div class="mt-4 text-center">
+                            <button type="submit" class="btn btn-primary w-100 py-2">Run Prediction</button>
+                        </div>
+                    </form>
 
-# App Header
-st.markdown("<h1 style='text-align: center; color: #333333;'>🩺 Health Risk Prediction Portal</h1>", unsafe_allow_html=True)
-st.markdown("<p style='text-align: center; color: #666666;'>Fill in your health metrics below to get an instant evaluation from the SVM model.</p>", unsafe_allow_html=True)
-st.markdown("---")
+                    {% if prediction is not none %}
+                    <div class="result-box text-center">
+                        <h4 class="fw-bold text-dark mb-2">Analysis Result</h4>
+                        <p class="fs-5 mb-0">Outcome: <span class="badge bg-success fs-6">{{ prediction }}</span></p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
+"""
 
-# Input Form Layout
-with st.form("prediction_form"):
-    st.markdown("### Patient Information & Metrics")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        age = st.number_input("Age", min_value=1, max_value=120, value=30)
-        gender = st.selectbox("Gender", ["Male", "Female", "Other"])
-        city = st.text_input("City", value="New York")
-        bmi = st.number_input("BMI", min_value=10.0, max_value=60.0, value=24.5)
-        family_history_diabetes = st.selectbox("Family History of Diabetes", ["No", "Yes"])
-        physical_activity_level = st.selectbox("Physical Activity Level", ["Low", "Moderate", "High"])
-        diet_type = st.selectbox("Diet Type", ["Standard", "Vegetarian", "Vegan", "Keto", "Other"])
-        smoking_status = st.selectbox("Smoking Status", ["Never", "Former", "Current"])
-        alcohol_consumption = st.selectbox("Alcohol Consumption", ["None", "Low", "Moderate", "High"])
-        
-    with col2:
-        hours_sleep_per_night = st.slider("Hours of Sleep per Night", min_value=1.0, max_value=15.0, value=7.0)
-        stress_level = st.slider("Stress Level (1-10)", min_value=1, max_value=10, value=5)
-        fasting_blood_sugar = st.number_input("Fasting Blood Sugar", min_value=50.0, max_value=300.0, value=95.0)
-        hba1c_level = st.number_input("HbA1c Level", min_value=3.0, max_value=15.0, value=5.5)
-        blood_pressure_systolic = st.number_input("Blood Pressure Systolic", min_value=70, max_value=200, value=120)
-        blood_pressure_diastolic = st.number_input("Blood Pressure Diastolic", min_value=40, max_value=130, value=80)
-        waist_circumference_cm = st.number_input("Waist Circumference (cm)", min_value=40.0, max_value=200.0, value=85.0)
-        income_bracket = st.selectbox("Income Bracket", ["Low", "Middle", "High"])
 
-    st.markdown("")
-    submit_button = st.form_submit_button(label="Run Prediction")
-
-# Process input data and run inference
-if submit_button:
-    # Note: Ensure the encoding of categorical columns matches what your model expects during training (e.g., One-Hot Encoding or Label Encoding). 
-    # Below is a sample dataframe creation matching your model's feature signature.
-    input_data = pd.DataFrame({
-        'age': [age],
-        'gender': [1 if gender == "Female" else (0 if gender == "Male" else 2)],
-        'city': [city], # If city was label encoded or dropped, handle accordingly
-        'bmi': [bmi],
-        'family_history_diabetes': [1 if family_history_diabetes == "Yes" else 0],
-        'physical_activity_level': [0 if physical_activity_level == "Low" else (1 if physical_activity_level == "Moderate" else 2)],
-        'diet_type': [diet_type],
-        'smoking_status': [smoking_status],
-        'alcohol_consumption': [alcohol_consumption],
-        'hours_sleep_per_night': [hours_sleep_per_night],
-        'stress_level': [stress_level],
-        'fasting_blood_sugar': [fasting_blood_sugar],
-        'hba1c_level': [hba1c_level],
-        'blood_pressure_systolic': [blood_pressure_systolic],
-        'blood_pressure_diastolic': [blood_pressure_diastolic],
-        'waist_circumference_cm': [waist_circumference_cm],
-        'income_bracket': [income_bracket]
-    })
-    
+@app.route("/", methods=["GET", "POST"])
+def home():
+  prediction = None
+  if request.method == "POST":
     try:
-        # If your pipeline includes preprocessors, pass raw input_data directly. 
-        # Otherwise, ensure data types align with model expectations.
-        prediction = model.predict(input_data)
-        
-        st.markdown("---")
-        st.markdown("### 📊 Prediction Result")
-        if prediction[0] == 1:
-            st.error(f"**Result:** High Risk Detected (Class: {prediction[0]}). Please consult a medical professional.")
-        else:
-            st.success(f"**Result:** Low Risk (Class: {prediction[0]}). Keep up the healthy lifestyle!")
-            
+      # Collecting features in the exact order parsed from model metadata
+      features = [
+          float(request.form["age"]),
+          float(request.form["gender"]),
+          float(request.form["city"]),
+          float(request.form["bmi"]),
+          float(request.form["family_history_diabetes"]),
+          float(request.form["physical_activity_level"]),
+          float(request.form["diet_type"]),
+          float(request.form["smoking_status"]),
+          float(request.form["alcohol_consumption"]),
+          float(request.form["hours_sleep_per_night"]),
+          float(request.form["stress_level"]),
+          float(request.form["fasting_blood_sugar"]),
+          float(request.form["hba1c_level"]),
+          float(request.form["blood_pressure_systolic"]),
+          float(request.form["blood_pressure_diastolic"]),
+          float(request.form["waist_circumference_cm"]),
+          float(request.form["income_bracket"]),
+      ]
+
+      pred = model.predict([features])[0]
+      prediction = (
+          "High Risk / Positive"
+          if str(pred) == "1"
+          else "Low Risk / Negative"
+      )
     except Exception as e:
-        st.warning("Note: If your model expects numerical categorical features or specific one-hot encoding columns matching training time, make sure data transformations align.")
-        st.info(f"Technical details: {e}")
+      prediction = f"Error processing input: {str(e)}"
+
+  return render_template_string(HTML_TEMPLATE, prediction=prediction)
+
+
+if __name__ == "__main__":
+  app.run(debug=True)
